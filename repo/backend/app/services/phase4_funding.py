@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from app.core.business_rules import OVERSPEND_THRESHOLD_MULTIPLIER
+
 import math
 import uuid
 from decimal import Decimal
@@ -34,8 +36,9 @@ from app.services.phase4_access import ensure_registration
 
 def _funding_read(fa: FundingAccount) -> FundingAccountRead:
     balance = fa.total_income - fa.total_expenses
+    threshold = fa.approved_budget * OVERSPEND_THRESHOLD_MULTIPLIER
     pct = float((fa.total_expenses / fa.approved_budget - Decimal("1")) * Decimal("100")) if fa.approved_budget > 0 else 0.0
-    is_overspent = fa.total_expenses > fa.approved_budget
+    is_overspent = fa.total_expenses > threshold
     return FundingAccountRead(
         id=fa.id,
         registration_id=fa.registration_id,
@@ -52,8 +55,9 @@ def _funding_read(fa: FundingAccount) -> FundingAccountRead:
 
 def _funding_list_item(fa: FundingAccount) -> FundingAccountListItem:
     balance = fa.total_income - fa.total_expenses
+    threshold = fa.approved_budget * OVERSPEND_THRESHOLD_MULTIPLIER
     pct = float((fa.total_expenses / fa.approved_budget - Decimal("1")) * Decimal("100")) if fa.approved_budget > 0 else 0.0
-    is_overspent = fa.total_expenses > fa.approved_budget
+    is_overspent = fa.total_expenses > threshold
     return FundingAccountListItem(
         id=fa.id,
         registration_id=fa.registration_id,
@@ -99,9 +103,9 @@ class Phase4FundingService:
         filters = []
         if is_overspent is not None:
             if is_overspent:
-                filters.append(FundingAccount.total_expenses > FundingAccount.approved_budget)
+                filters.append(FundingAccount.total_expenses > FundingAccount.approved_budget * OVERSPEND_THRESHOLD_MULTIPLIER)
             else:
-                filters.append(FundingAccount.total_expenses <= FundingAccount.approved_budget)
+                filters.append(FundingAccount.total_expenses <= FundingAccount.approved_budget * OVERSPEND_THRESHOLD_MULTIPLIER)
         if activity_id is not None:
             filters.append(Registration.activity_id == activity_id)
 
@@ -140,7 +144,7 @@ class Phase4FundingService:
         projected = fa.total_expenses
         if payload.type == TransactionType.expense:
             projected = fa.total_expenses + payload.amount
-        threshold = fa.approved_budget * Decimal("1.10")
+        threshold = fa.approved_budget * OVERSPEND_THRESHOLD_MULTIPLIER
         if payload.type == TransactionType.expense and projected > threshold and not (payload.override_confirmed or False):
             pct = float((projected / fa.approved_budget - Decimal("1")) * Decimal("100")) if fa.approved_budget > 0 else 0.0
             return (
@@ -184,8 +188,12 @@ class Phase4FundingService:
         self.db.refresh(tx)
         self.db.refresh(fa)
         from app.services.phase5_alerts_service import Phase5AlertsService
+        from app.services.phase5_quality_metrics import Phase5QualityMetricsService
 
         Phase5AlertsService.maybe_create_overspend_alert(self.db, fa)
+        reg = self.db.get(Registration, fa.registration_id)
+        if reg:
+            Phase5QualityMetricsService(self.db).compute(activity_id=reg.activity_id)
         self.db.commit()
         read = TransactionRead.model_validate(tx)
         if payload.override_confirmed and payload.type == TransactionType.expense:
@@ -228,7 +236,7 @@ class Phase4FundingService:
             ti -= tx.amount
 
         projected_te = te + new_amount if new_type == TransactionType.expense else te
-        threshold = fa.approved_budget * Decimal("1.10")
+        threshold = fa.approved_budget * OVERSPEND_THRESHOLD_MULTIPLIER
         override = bool(patch.get("override_confirmed", False))
         if new_type == TransactionType.expense and projected_te > threshold and not override:
             pct = float((projected_te / fa.approved_budget - Decimal("1")) * Decimal("100")) if fa.approved_budget > 0 else 0.0
@@ -269,8 +277,12 @@ class Phase4FundingService:
         self.db.refresh(tx)
         self.db.refresh(fa)
         from app.services.phase5_alerts_service import Phase5AlertsService
+        from app.services.phase5_quality_metrics import Phase5QualityMetricsService
 
         Phase5AlertsService.maybe_create_overspend_alert(self.db, fa)
+        reg = self.db.get(Registration, fa.registration_id)
+        if reg:
+            Phase5QualityMetricsService(self.db).compute(activity_id=reg.activity_id)
         self.db.commit()
         read = TransactionRead.model_validate(tx)
         if override and new_type == TransactionType.expense:
@@ -351,6 +363,14 @@ class Phase4FundingService:
             fa.total_income = fa.total_income - tx.amount
         fa.updated_at = now
         self.db.delete(tx)
+        
+        from app.services.phase5_alerts_service import Phase5AlertsService
+        from app.services.phase5_quality_metrics import Phase5QualityMetricsService
+        Phase5AlertsService.maybe_create_overspend_alert(self.db, fa)
+        reg = self.db.get(Registration, fa.registration_id)
+        if reg:
+            Phase5QualityMetricsService(self.db).compute(activity_id=reg.activity_id)
+            
         self.db.commit()
         return TransactionDeleteResponse(message="Transaction deleted successfully")
 

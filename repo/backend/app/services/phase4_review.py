@@ -112,6 +112,8 @@ class Phase4ReviewService:
 
         self.db.commit()
         self.db.refresh(rec)
+        from app.services.phase5_quality_metrics import Phase5QualityMetricsService
+        Phase5QualityMetricsService(self.db).compute(activity_id=reg.activity_id)
         return ReviewResponse(
             review_id=rec.id,
             registration_id=reg.id,
@@ -193,6 +195,15 @@ class Phase4ReviewService:
                     )
                 )
         self.db.commit()
+        from app.services.phase5_quality_metrics import Phase5QualityMetricsService
+        act_ids = set()
+        for rid in payload.registration_ids:
+            reg = self.db.get(Registration, rid)
+            if reg:
+                act_ids.add(reg.activity_id)
+        for aid in act_ids:
+            Phase5QualityMetricsService(self.db).compute(activity_id=aid)
+
         return BatchReviewResponse(
             batch_id=batch_id,
             total_requested=len(payload.registration_ids),
@@ -280,6 +291,8 @@ class Phase4ReviewService:
         _ensure_funding_account(self.db, reg)
         self.db.commit()
         self.db.refresh(rec)
+        from app.services.phase5_quality_metrics import Phase5QualityMetricsService
+        Phase5QualityMetricsService(self.db).compute(activity_id=reg.activity_id)
         return ReviewResponse(
             review_id=rec.id,
             registration_id=reg.id,

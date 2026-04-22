@@ -39,12 +39,12 @@ async def get_current_user(
     token = credentials.credentials
     try:
         payload = decode_access_token(token)
-    except jwt.PyJWTError:
+    except Exception:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, detail="Missing or invalid token")
-
+    
     jti = payload.get("jti")
-    if not jti or is_jti_revoked(str(jti)):
-        raise HTTPException(status.HTTP_401_UNAUTHORIZED, detail="Missing or invalid token")
+    if not jti or is_jti_revoked(db, str(jti)):
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, detail="Token has been revoked")
 
     sub = payload.get("sub")
     if not sub:

@@ -7,6 +7,7 @@ from fastapi import HTTPException, status
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from app.core.business_rules import OVERSPEND_THRESHOLD_MULTIPLIER
 from app.core.time import utcnow
 from app.models.enums import RegistrationStatus
 from app.models.registration import Registration
@@ -89,10 +90,10 @@ class Phase5QualityMetricsService:
             )
         accounts = self.db.scalars(fa_stmt).all()
         total_accounts = len(accounts)
-        overspent = sum(1 for fa in accounts if fa.total_expenses > fa.approved_budget)
+        overspent = sum(1 for fa in accounts if fa.total_expenses > fa.approved_budget * OVERSPEND_THRESHOLD_MULTIPLIER)
         overspending_rate = round((overspent / total_accounts) * 100, 2) if total_accounts else 0.0
 
-        return {
+        res = {
             "total_registrations": total_registrations,
             "total_reviewed": total_reviewed,
             "approved": approved,
@@ -104,6 +105,11 @@ class Phase5QualityMetricsService:
             "overspending_rate": overspending_rate,
             "computed_at": utcnow().isoformat().replace("+00:00", "Z"),
         }
+
+        from app.services.phase5_alerts_service import Phase5AlertsService
+        if activity_id is not None:
+            Phase5AlertsService(self.db).evaluate_quality_metrics(activity_id, res)
+        return res
 
     def for_activity(self, activity_id: uuid.UUID) -> dict:
         if self.activities.get_by_id(activity_id) is None:

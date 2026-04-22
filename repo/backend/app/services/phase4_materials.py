@@ -138,8 +138,14 @@ class Phase4MaterialService:
             # Supplementary flow is consumed once entered, but uploads remain allowed until deadline.
             reg.supplementary_used = True
         reg.updated_at = now
-        self.db.commit()
-        self.db.refresh(mv)
+        
+        from sqlalchemy.exc import IntegrityError
+        try:
+            self.db.commit()
+            self.db.refresh(mv)
+        except IntegrityError:
+            self.db.rollback()
+            raise bad_request("DUPLICATE_FILE", "This file has already been uploaded in the system (SHA-256 match)")
 
         resp = MaterialUploadResponse(
             id=mv.id,

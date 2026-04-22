@@ -19,3 +19,8 @@ export async function promoteWaitlist(registrationId, payload = {}) {
   const { data } = await apiClient.patch(`/registrations/${registrationId}/waitlist-promote`, payload)
   return data
 }
+
+export async function listReviews(registrationId, params = {}) {
+  const { data } = await apiClient.get(`/registrations/${registrationId}/reviews`, { params })
+  return data
+}

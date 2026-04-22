@@ -11,6 +11,7 @@ from app.models.quality_validation_result import QualityValidationResult
 from app.models.material_version import MaterialVersion
 from app.models.registration import Registration
 from app.models.review_record import ReviewRecord
+from app.models.revoked_token import RevokedToken
 from app.models.sensitive_verification_audit import SensitiveVerificationAudit
 from app.models.transaction_record import TransactionRecord
 from app.models.user import User
@@ -29,6 +30,7 @@ __all__ = [
     "MaterialVersion",
     "Registration",
     "ReviewRecord",
+    "RevokedToken",
     "SensitiveVerificationAudit",
     "TransactionRecord",
     "User",

@@ -19,6 +19,11 @@ const modalComment = ref('')
 const modalCorrectionReason = ref('')
 const verifyOpen = ref(false)
 const verifyPayload = ref(null)
+const historyOpen = ref(false)
+const historyData = ref([])
+const promoteOpen = ref(false)
+const promoteComment = ref('')
+const promoteRegistrationId = ref(null)
 
 const selectedIds = computed(() => Array.from(selected.value))
 
@@ -114,6 +119,41 @@ async function openVerify(registrationId) {
   }
 }
 
+async function openHistory(registrationId) {
+  historyOpen.value = true
+  historyData.value = []
+  loading.value = true
+  error.value = ''
+  try {
+    const res = await reviewApi.listReviews(registrationId)
+    historyData.value = res.items || []
+  } catch (e) {
+    error.value = e?.response?.data?.error?.message ?? e.message ?? 'Failed to load history'
+  } finally {
+    loading.value = false
+  }
+}
+
+function openPromote(registrationId) {
+  promoteOpen.value = true
+  promoteRegistrationId.value = registrationId
+  promoteComment.value = ''
+}
+
+async function submitPromote() {
+  if (!promoteRegistrationId.value) return
+  loading.value = true
+  error.value = ''
+  try {
+    await reviewApi.promoteWaitlist(promoteRegistrationId.value, { comment: promoteComment.value || null })
+    promoteOpen.value = false
+    await load()
+  } catch (e) {
+    error.value = e?.response?.data?.error?.message ?? e.message ?? 'Promote failed'
+  } finally {
+    loading.value = false
+  }
+}
 
 onMounted(load)
 </script>
@@ -172,6 +212,12 @@ onMounted(load)
               <button type="button" class="linkish" @click="selectSingle(row.id)">Review</button>
               ·
               <button type="button" class="linkish" @click="openVerify(row.id)">Verify sensitive</button>
+              ·
+              <button type="button" class="linkish" @click="openHistory(row.id)">History</button>
+              <template v-if="row.status === 'waitlisted'">
+                ·
+                <button type="button" class="linkish" @click="openPromote(row.id)">Promote</button>
+              </template>
             </td>
           </tr>
         </tbody>
@@ -214,6 +260,36 @@ onMounted(load)
           <p class="muted small mono">Audit {{ verifyPayload.audit_log_id }} at {{ verifyPayload.verified_at }}</p>
         </template>
         <button type="button" class="btn" @click="verifyOpen = false">Close</button>
+      </div>
+    </div>
+
+    <div v-if="historyOpen" class="backdrop" @click.self="historyOpen = false">
+      <div class="modal card">
+        <h2>Review history</h2>
+        <p v-if="!historyData.length && !loading" class="muted">No reviews found.</p>
+        <p v-if="loading && !historyData.length" class="muted">Loading…</p>
+        <div class="stack" v-else>
+          <div v-for="rev in historyData" :key="rev.id" class="ver">
+            <p class="small"><strong>{{ rev.reviewer_username }}</strong> changed from {{ rev.previous_status }} to {{ rev.new_status }}</p>
+            <p v-if="rev.comment" class="small muted">Comment: {{ rev.comment }}</p>
+            <p v-if="rev.correction_reason" class="small err">Reason: {{ rev.correction_reason }}</p>
+            <p class="small muted mono">{{ rev.created_at }}</p>
+          </div>
+        </div>
+        <div class="row">
+          <button type="button" class="btn" @click="historyOpen = false">Close</button>
+        </div>
+      </div>
+    </div>
+
+    <div v-if="promoteOpen" class="backdrop" @click.self="promoteOpen = false">
+      <div class="modal card">
+        <h2>Promote from waitlist</h2>
+        <label>Comment <textarea v-model="promoteComment" class="inp" rows="2"></textarea></label>
+        <div class="row">
+          <button type="button" class="btn" @click="promoteOpen = false">Close</button>
+          <button type="button" class="btn primary" :disabled="loading" @click="submitPromote">Promote</button>
+        </div>
       </div>
     </div>
   </section>
@@ -335,5 +411,18 @@ h1 {
 }
 .err {
   color: #b91c1c;
+}
+.stack {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  max-height: 400px;
+  overflow-y: auto;
+}
+.ver {
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  padding: 0.5rem;
+  background: #fff;
 }
 </style>

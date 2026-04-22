@@ -288,6 +288,7 @@ class Phase5ReportsService:
     def list_reports(
         self,
         *,
+        user: User,
         page: int,
         per_page: int,
         report_type: str | None,
@@ -295,6 +296,9 @@ class Phase5ReportsService:
     ) -> dict:
         q = select(GeneratedReport)
         filters = []
+        user_role = getattr(user.role, "value", user.role)
+        if user_role == "financial_admin":
+            filters.append(GeneratedReport.created_by == user.id)
         if report_type:
             filters.append(GeneratedReport.report_type == report_type)
         if file_format:

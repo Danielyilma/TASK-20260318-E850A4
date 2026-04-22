@@ -26,7 +26,7 @@ const router = createRouter({
       path: '/activities/new',
       name: 'activity-new',
       component: ActivityCreate,
-      meta: { requiresAuth: true },
+      meta: { requiresAuth: true, roles: ['system_admin'] },
     },
     {
       path: '/activities/:id',

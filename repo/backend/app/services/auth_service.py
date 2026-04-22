@@ -49,6 +49,17 @@ class AuthService:
 
         user.updated_at = now
 
+        from app.services.audit_log_service import AuditLogService
+        AuditLogService(self.db).append(
+            user_id=user.id,
+            username=user.username,
+            action="login",
+            resource_type="session",
+            resource_id=None,
+            details={"outcome": "failed", "locked": user.is_locked},
+            ip_address="unknown",
+        )
+
     def login(self, payload: LoginRequest) -> LoginResponse:
         user = self.users.get_by_username(payload.username)
         if user is None or not user.is_active:
@@ -98,9 +109,22 @@ class AuthService:
             raise HTTPException(status.HTTP_401_UNAUTHORIZED, detail="Missing or invalid token")
 
         jti = payload.get("jti")
-        if not jti:
+        exp = payload.get("exp")
+        if not jti or not exp:
             raise HTTPException(status.HTTP_401_UNAUTHORIZED, detail="Missing or invalid token")
-        revoke_jti(str(jti))
+        
+        from datetime import datetime, timezone
+        expires_at = datetime.fromtimestamp(exp, tz=timezone.utc)
+        sub = payload.get("sub")
+        revoked_by = None
+        if sub:
+            import uuid
+            try:
+                revoked_by = uuid.UUID(sub)
+            except ValueError:
+                pass
+        
+        revoke_jti(self.db, str(jti), expires_at, revoked_by)
 
     def build_me_response(self, user: User) -> AuthMeResponse:
         id_number, contact_info = self._mask_sensitive(user)

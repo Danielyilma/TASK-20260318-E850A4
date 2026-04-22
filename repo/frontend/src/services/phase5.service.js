@@ -45,6 +45,11 @@ export async function postReconciliationReport(payload) {
   return data
 }
 
+export async function postComplianceReport(payload) {
+  const { data } = await apiClient.post('/reports/compliance', payload)
+  return data
+}
+
 export async function downloadReport(reportId) {
   const { data } = await apiClient.get(`/reports/${reportId}/download`, {
     responseType: 'blob',

@@ -55,7 +55,7 @@ onMounted(() => {
 
     <div class="card">
       <p class="muted">
-        Docker defaults: <code>admin</code> / <code>AdminP@ss1</code> unless overridden by environment variables.
+        Authentication requires configured credentials. See your <code>.env</code> file.
       </p>
 
       <label class="field">

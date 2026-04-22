@@ -9,6 +9,7 @@ import tempfile
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
+import logging
 
 import sqlalchemy as sa
 from fastapi import HTTPException, status
@@ -39,7 +40,7 @@ def _pg_tool_dsn(url: str) -> str:
 
 def _run_pg_dump(database_url: str, sql_out: Path) -> None:
     result = subprocess.run(
-        ["pg_dump", "--format=plain", "--no-owner", "--dbname", database_url, "-f", str(sql_out)],
+        ["pg_dump", "--format=plain", "--clean", "--if-exists", "--no-owner", "--dbname", database_url, "-f", str(sql_out)],
         capture_output=True,
         text=True,
         timeout=3600,
@@ -185,15 +186,16 @@ class BackupService:
             )
         except Exception as exc:  # noqa: BLE001
             self.db.rollback()
+            logging.getLogger(__name__).exception("Backup process failed: %s", exc)
             row = self.db.get(BackupRecord, record.id)
             if row is not None:
                 row.status = "failed"
-                row.error_detail = str(exc)[:1900]
+                row.error_detail = "Backup failed due to internal error"
             if artifact.exists():
                 artifact.unlink(missing_ok=True)
             if row is not None:
                 self.db.commit()
-            raise bad_request("VALIDATION_ERROR", f"Backup failed: {exc}") from exc
+            raise bad_request("VALIDATION_ERROR", "Backup failed due to internal error. Check server logs.") from exc
         finally:
             shutil.rmtree(staging, ignore_errors=True)
 

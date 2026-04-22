@@ -26,6 +26,7 @@ const pendingTxPayload = ref(null)
 const invoiceFile = ref(null)
 const overallStats = ref(null)
 const accountStats = ref(null)
+const statsGroupBy = ref('category')
 
 const maxInvoiceBytes = MAX_MATERIAL_FILE_BYTES
 
@@ -34,7 +35,7 @@ async function loadAccounts() {
   error.value = ''
   try {
     const data = await fundingApi.listFundingAccounts({ page: 1, per_page: 100 })
-    overallStats.value = await fundingApi.getFundingStatistics({ group_by: 'category' })
+    overallStats.value = await fundingApi.getFundingStatistics({ group_by: statsGroupBy.value })
     accounts.value = data.items ?? []
     total.value = data.total ?? 0
     if (!selectedAccountId.value && accounts.value.length) {
@@ -209,9 +210,24 @@ onMounted(loadAccounts)
             Total accounts {{ overallStats.summary?.total_accounts ?? 0 }},
             overspending rate {{ overallStats.summary?.overspending_rate ?? 0 }}%
           </p>
-          <ul class="list">
+          <div class="row" style="justify-content: flex-start; margin-bottom: 0.5rem; gap: 0.5rem;">
+            <label class="small muted" style="display: flex; align-items: center; gap: 0.25rem;">
+              Group By
+              <select v-model="statsGroupBy" @change="loadAccounts" class="inp" style="padding: 0.15rem 0.25rem;">
+                <option value="category">Category</option>
+                <option value="month">Month</option>
+                <option value="quarter">Quarter</option>
+              </select>
+            </label>
+          </div>
+          <ul class="list" v-if="statsGroupBy === 'category'">
             <li v-for="row in overallStats.by_category ?? []" :key="row.category" class="small">
               {{ row.category }}: expenses {{ row.total_expenses }} ({{ row.transaction_count }} tx)
+            </li>
+          </ul>
+          <ul class="list" v-else>
+            <li v-for="row in overallStats.by_time ?? []" :key="row.period" class="small">
+              {{ row.period }}: expenses {{ row.total_expenses }} ({{ row.transaction_count }} tx)
             </li>
           </ul>
           <ul v-if="accountStats?.by_category?.length" class="list">

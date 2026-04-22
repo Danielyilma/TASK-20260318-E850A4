@@ -68,4 +68,4 @@ def create_access_token(*, user_id: uuid.UUID, settings: Settings | None = None)
 
 def decode_access_token(token: str, *, settings: Settings | None = None) -> dict:
     settings = settings or get_settings()
-    return jwt.decode(token, settings.jwt_secret_key, algorithms=[settings.jwt_algorithm])
+    return jwt.decode(token, settings.jwt_secret_key, algorithms=[settings.jwt_algorithm], leeway=10)

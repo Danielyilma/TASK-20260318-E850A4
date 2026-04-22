@@ -104,7 +104,7 @@ class AuditLogService:
         except Exception:
             return None, None
         jti = payload.get("jti")
-        if not jti or is_jti_revoked(str(jti)):
+        if not jti or is_jti_revoked(self.db, str(jti)):
             return None, None
         sub = payload.get("sub")
         if not sub:

@@ -28,6 +28,7 @@ const batchJson = ref(
 
 const reportStart = ref('')
 const reportEnd = ref('')
+const reportActivityId = ref('')
 
 async function loadAlerts() {
   loading.value = true
@@ -142,6 +143,55 @@ async function genAuditCsv() {
     const a = document.createElement('a')
     a.href = url
     a.download = rep.file_name || 'report.csv'
+    a.click()
+    URL.revokeObjectURL(url)
+    await loadReports()
+  } catch (e) {
+    error.value = e?.response?.data?.error?.message ?? e.message ?? 'Report failed'
+  } finally {
+    loading.value = false
+  }
+}
+
+async function genReconciliationCsv() {
+  loading.value = true
+  error.value = ''
+  try {
+    const body = { format: 'csv' }
+    if (reportStart.value) body.start_date = reportStart.value
+    if (reportEnd.value) body.end_date = reportEnd.value
+    if (reportActivityId.value) body.activity_id = reportActivityId.value
+    const rep = await phase5.postReconciliationReport(body)
+    const blob = await phase5.downloadReport(rep.report_id)
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = rep.file_name || 'reconciliation.csv'
+    a.click()
+    URL.revokeObjectURL(url)
+    await loadReports()
+  } catch (e) {
+    error.value = e?.response?.data?.error?.message ?? e.message ?? 'Report failed'
+  } finally {
+    loading.value = false
+  }
+}
+
+async function genComplianceCsv() {
+  if (!reportActivityId.value) {
+    error.value = 'Activity ID is required for compliance report'
+    return
+  }
+  loading.value = true
+  error.value = ''
+  try {
+    const body = { format: 'csv', activity_id: reportActivityId.value }
+    const rep = await phase5.postComplianceReport(body)
+    const blob = await phase5.downloadReport(rep.report_id)
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = rep.file_name || 'compliance.csv'
     a.click()
     URL.revokeObjectURL(url)
     await loadReports()
@@ -289,10 +339,16 @@ onMounted(() => {
     </div>
 
     <div v-show="tab === 'reports'" class="card">
-      <h2>Generate audit CSV</h2>
+      <h2>Generate Reports</h2>
+      <label class="blk">Activity ID (optional/required) <input v-model="reportActivityId" class="inp" type="text" /></label>
       <label class="blk">Start (ISO, optional) <input v-model="reportStart" class="inp" type="text" /></label>
       <label class="blk">End (ISO, optional) <input v-model="reportEnd" class="inp" type="text" /></label>
-      <LoadingButton :loading="loading" variant="primary" @click="genAuditCsv">Download CSV</LoadingButton>
+      
+      <div class="row" style="justify-content: flex-start; gap: 1rem; margin-top: 1rem;">
+        <LoadingButton :loading="loading" variant="primary" @click="genAuditCsv">Audit CSV</LoadingButton>
+        <LoadingButton :loading="loading" variant="primary" @click="genReconciliationCsv">Reconciliation CSV</LoadingButton>
+        <LoadingButton :loading="loading" variant="primary" @click="genComplianceCsv">Compliance CSV</LoadingButton>
+      </div>
 
       <h2 class="mt">Recent reports</h2>
       <LoadingButton :loading="loading" class="mb" @click="loadReports">Refresh</LoadingButton>

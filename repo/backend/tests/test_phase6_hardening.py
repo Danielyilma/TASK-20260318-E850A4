@@ -8,7 +8,8 @@ from datetime import datetime, timedelta
 from decimal import Decimal
 
 import pytest
-from sqlalchemy import select
+from unittest.mock import patch
+from sqlalchemy import select, func
 
 from app.core.maintenance import enter_maintenance, leave_maintenance
 from app.core.security import hash_password_with_salt
@@ -17,6 +18,7 @@ from app.models.audit_log import AuditLog
 from app.models.enums import RegistrationStatus, UserRole
 from app.models.material_checklist import MaterialChecklist
 from app.models.registration import Registration
+from app.models.revoked_token import RevokedToken
 from app.models.user import User
 from app.services.backup_service import BackupService
 
@@ -611,3 +613,78 @@ def test_daily_auto_backup_record_created(db_session):
     resp = svc.create_daily_auto()
     assert resp.backup_type == "daily_auto"
     assert resp.status == "completed"
+
+
+@pytest.mark.asyncio
+async def test_revoked_tokens_persisted(client, applicant_a_headers, db_session):
+    headers_a, _uid_a = applicant_a_headers
+    r = await client.post("/api/v1/auth/logout", headers=headers_a)
+    assert r.status_code == 200
+
+    r2 = await client.get("/api/v1/auth/me", headers=headers_a)
+    assert r2.status_code == 401
+    
+    count = db_session.scalar(select(func.count()).select_from(RevokedToken)) or 0
+    assert count > 0
+
+
+@pytest.mark.asyncio
+async def test_failed_login_audit_record(client, db_session, applicant_a_headers):
+    headers_a, uid = applicant_a_headers
+    u = db_session.get(User, uid)
+    resp = await client.post("/api/v1/auth/login", json={"username": u.username, "password": "wrong"})
+    assert resp.status_code == 401
+
+    logs = db_session.scalars(select(AuditLog).where(AuditLog.action == "login", AuditLog.username == u.username)).all()
+    assert len(logs) >= 1
+    failed = [lg for lg in logs if lg.details.get("outcome") == "failed"]
+    assert len(failed) >= 1
+
+
+@pytest.mark.asyncio
+async def test_backup_error_sanitization(client, admin_headers, db_session):
+    with patch("app.services.backup_service._dump_sqlite_schema_data", side_effect=RuntimeError("Simulated DB error")):
+        r = await client.post("/api/v1/backups", headers=admin_headers)
+        assert r.status_code == 400
+        body = r.json()
+        assert "Backup failed due to internal error" in body["error"]["message"]
+        assert "Traceback" not in body["error"]["message"]
+@pytest.mark.asyncio
+async def test_reviewer_cannot_view_draft_registration(client, reviewer_headers, applicant_a_headers, admin_headers, db_session):
+    # 1. Create activity
+    ar = await client.post(
+        "/api/v1/activities",
+        headers=admin_headers,
+        json={"name": "Draft test", "description": None, "deadline": "2030-12-31T00:00:00Z", "budget": 1000},
+    )
+    aid = ar.json()["id"]
+    
+    # 2. Create draft registration
+    headers_a, _ = applicant_a_headers
+    reg = await client.post(
+        "/api/v1/registrations",
+        headers=headers_a,
+        json={"activity_id": aid, "form_data": _form(), "requested_funding": 500},
+    )
+    rid = reg.json()["id"]
+    
+    # 3. Verify reviewer cannot see it
+    r = await client.get(f"/api/v1/registrations/{rid}", headers=reviewer_headers)
+    assert r.status_code == 403
+    
+    # 4. Verify reviewer list excludes it
+    rl = await client.get("/api/v1/registrations", headers=reviewer_headers)
+    assert rl.status_code == 200
+    ids = [reg["id"] for reg in rl.json()["items"]]
+    assert rid not in ids
+
+
+@pytest.mark.asyncio
+async def test_logout_idempotency(client, reviewer_headers):
+    # First logout
+    r1 = await client.post("/api/v1/auth/logout", headers=reviewer_headers)
+    assert r1.status_code == 200
+    
+    # Second logout with same token
+    r2 = await client.post("/api/v1/auth/logout", headers=reviewer_headers)
+    assert r2.status_code == 200

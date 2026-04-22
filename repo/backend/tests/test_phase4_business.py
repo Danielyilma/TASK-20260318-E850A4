@@ -247,8 +247,7 @@ async def test_review_invalid_transition_draft_to_approve(
         headers=reviewer_headers,
         json={"action": "approve", "comment": "nope"},
     )
-    assert resp.status_code == 400
-    assert resp.json()["error"]["code"] == "INVALID_STATE_TRANSITION"
+    assert resp.status_code == 403
 
 
 @pytest.mark.asyncio
@@ -425,6 +424,9 @@ async def test_verify_sensitive_unmasks_applicant(
         json={"activity_id": aid, "form_data": _form(), "requested_funding": 900},
     )
     rid = reg.json()["id"]
+
+    # Submit so reviewer can access
+    await client.patch(f"/api/v1/registrations/{rid}/submit", headers=applicant_headers)
 
     resp = await client.get(f"/api/v1/registrations/{rid}/verify-sensitive", headers=reviewer_headers)
     assert resp.status_code == 200, resp.text

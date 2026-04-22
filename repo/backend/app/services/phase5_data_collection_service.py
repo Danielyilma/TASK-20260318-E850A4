@@ -62,62 +62,76 @@ class Phase5DataCollectionService:
             from app.core.http_errors import bad_request
 
             raise bad_request("INVALID_STATE_TRANSITION", "Batch is not in pending status")
+        wl = batch.scope_whitelist or {}
+        try:
+            act_ids = [uuid.UUID(str(x)) for x in wl.get("activity_ids", [])]
+        except ValueError:
+            from app.core.http_errors import bad_request
+            raise bad_request("VALIDATION_ERROR", "Invalid UUID in activity_ids whitelist")
+
         now = utcnow()
         batch.status = "in_progress"
         self.db.commit()
-        wl = batch.scope_whitelist or {}
-        act_ids = [uuid.UUID(x) for x in wl.get("activity_ids", [])]
-        statuses: list[RegistrationStatus] = []
-        for s in wl.get("statuses", []):
-            try:
-                statuses.append(RegistrationStatus(str(s)))
-            except ValueError:
-                continue
-        vtypes = list(wl.get("validation_types", []))
 
-        q = select(Registration)
-        filters = []
-        if act_ids:
-            filters.append(Registration.activity_id.in_(act_ids))
-        if statuses:
-            filters.append(Registration.status.in_(statuses))
-        if filters:
-            q = q.where(*filters)
-        registrations = list(self.db.scalars(q).all())
+        try:
+            statuses: list[RegistrationStatus] = []
+            for s in wl.get("statuses", []):
+                try:
+                    statuses.append(RegistrationStatus(str(s)))
+                except ValueError:
+                    continue
+            vtypes = list(wl.get("validation_types", []))
 
-        valid_ct = 0
-        invalid_ct = 0
-        for reg in registrations:
-            for vt in vtypes:
-                ok, err = self._run_validation(reg, vt)
-                r = QualityValidationResult(
-                    id=uuid.uuid4(),
-                    batch_id=batch.id,
-                    registration_id=reg.id,
-                    validation_type=vt,
-                    is_valid=ok,
-                    error_details=err,
-                    created_at=utcnow(),
-                )
-                self.db.add(r)
-                if ok:
-                    valid_ct += 1
-                else:
-                    invalid_ct += 1
+            q = select(Registration)
+            filters = []
+            if act_ids:
+                filters.append(Registration.activity_id.in_(act_ids))
+            if statuses:
+                filters.append(Registration.status.in_(statuses))
+            if filters:
+                q = q.where(*filters)
+            registrations = list(self.db.scalars(q).all())
 
-        batch.status = "completed"
-        batch.completed_at = utcnow()
-        batch.error_message = None
-        self.db.commit()
-        total_validated = valid_ct + invalid_ct
-        return {
-            "batch_id": str(batch.id),
-            "status": "completed",
-            "total_validated": total_validated,
-            "valid": valid_ct,
-            "invalid": invalid_ct,
-            "completed_at": batch.completed_at.isoformat().replace("+00:00", "Z"),
-        }
+            valid_ct = 0
+            invalid_ct = 0
+            for reg in registrations:
+                for vt in vtypes:
+                    ok, err = self._run_validation(reg, vt)
+                    r = QualityValidationResult(
+                        id=uuid.uuid4(),
+                        batch_id=batch.id,
+                        registration_id=reg.id,
+                        validation_type=vt,
+                        is_valid=ok,
+                        error_details=err,
+                        created_at=utcnow(),
+                    )
+                    self.db.add(r)
+                    if ok:
+                        valid_ct += 1
+                    else:
+                        invalid_ct += 1
+
+            batch.status = "completed"
+            batch.completed_at = utcnow()
+            batch.error_message = None
+            self.db.commit()
+            total_validated = valid_ct + invalid_ct
+            return {
+                "batch_id": str(batch.id),
+                "status": "completed",
+                "total_validated": total_validated,
+                "valid": valid_ct,
+                "invalid": invalid_ct,
+                "completed_at": batch.completed_at.isoformat().replace("+00:00", "Z"),
+            }
+        except Exception as e:
+            self.db.rollback()
+            batch = self.get_batch(batch_id)
+            batch.status = "failed"
+            batch.error_message = str(e)
+            self.db.commit()
+            raise
 
     def _run_validation(self, reg: Registration, vt: str) -> tuple[bool, str | None]:
         fd = reg.form_data or {}

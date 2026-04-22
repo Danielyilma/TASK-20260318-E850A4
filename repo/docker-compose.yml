@@ -25,9 +25,9 @@ services:
       DB_HOST: db
       DB_PORT: "5432"
       CORS_ORIGINS: http://localhost:5173,http://127.0.0.1:5173
-      JWT_SECRET_KEY: dev-jwt-secret-change-me
+      JWT_SECRET_KEY: ${JWT_SECRET_KEY}
       SYSTEM_ADMIN_USERNAME: admin
-      SYSTEM_ADMIN_PASSWORD: AdminP@ss1
+      SYSTEM_ADMIN_PASSWORD: ${SYSTEM_ADMIN_PASSWORD}
       UPLOAD_ROOT: /data/uploads
       BACKUP_ROOT: /data/backups
     volumes:

@@ -7,6 +7,8 @@ from decimal import Decimal
 from sqlalchemy import case, func, select
 from sqlalchemy.orm import Session
 
+from app.core.business_rules import OVERSPEND_THRESHOLD_MULTIPLIER
+
 from app.models.funding_account import FundingAccount
 from app.models.registration import Registration
 from app.models.transaction_record import TransactionRecord
@@ -40,7 +42,7 @@ class Phase5FundingStatisticsService:
         total_income = sum((fa.total_income for fa in accounts), Decimal("0"))
         total_expenses = sum((fa.total_expenses for fa in accounts), Decimal("0"))
         balance = total_income - total_expenses
-        overspent_accounts = sum(1 for fa in accounts if fa.total_expenses > fa.approved_budget)
+        overspent_accounts = sum(1 for fa in accounts if fa.total_expenses > fa.approved_budget * OVERSPEND_THRESHOLD_MULTIPLIER)
         overspending_rate = (
             round(float((Decimal(overspent_accounts) / Decimal(total_accounts)) * Decimal("100")), 2)
             if total_accounts
@@ -189,6 +191,6 @@ class Phase5FundingStatisticsService:
             "total_expenses": float(fa.total_expenses),
             "balance": float(fa.total_income - fa.total_expenses),
             "overspend_percentage": round(pct, 2),
-            "is_overspent": fa.total_expenses > fa.approved_budget,
+            "is_overspent": fa.total_expenses > fa.approved_budget * OVERSPEND_THRESHOLD_MULTIPLIER,
             "by_category": by_cat,
         }

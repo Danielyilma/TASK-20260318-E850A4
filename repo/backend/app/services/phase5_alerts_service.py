@@ -9,6 +9,11 @@ from fastapi import HTTPException, status
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from app.core.business_rules import (
+    APPROVAL_RATE_MIN_THRESHOLD,
+    CORRECTION_RATE_MAX_THRESHOLD,
+    OVERSPENDING_RATE_MAX_THRESHOLD,
+)
 from app.core.http_errors import api_error
 from app.core.time import utcnow
 from app.models.alert_record import AlertRecord
@@ -49,6 +54,59 @@ class Phase5AlertsService:
             created_at=utcnow(),
         )
         db.add(row)
+
+    def evaluate_quality_metrics(self, activity_id: uuid.UUID, metrics: dict) -> None:
+        def _manage_alert(alert_type: str, condition: bool, message: str, severity: AlertSeverity) -> None:
+            existing = self.db.scalars(
+                select(AlertRecord).where(
+                    AlertRecord.alert_type == alert_type,
+                    AlertRecord.resource_type == "activity",
+                    AlertRecord.resource_id == activity_id,
+                    AlertRecord.acknowledged.is_(False),
+                )
+            ).first()
+            if condition:
+                if not existing:
+                    row = AlertRecord(
+                        id=uuid.uuid4(),
+                        alert_type=alert_type,
+                        severity=severity.value,
+                        message=message,
+                        resource_type="activity",
+                        resource_id=activity_id,
+                        acknowledged=False,
+                        acknowledged_by=None,
+                        acknowledged_at=None,
+                        created_at=utcnow(),
+                    )
+                    self.db.add(row)
+            elif existing:
+                existing.acknowledged = True
+                existing.acknowledged_at = utcnow()
+
+        approval_rate = metrics.get("approval_rate", 0)
+        correction_rate = metrics.get("correction_rate", 0)
+        overspending_rate = metrics.get("overspending_rate", 0)
+
+        _manage_alert(
+            "low_approval_rate",
+            approval_rate < APPROVAL_RATE_MIN_THRESHOLD,
+            f"Approval rate is {approval_rate}%, below {APPROVAL_RATE_MIN_THRESHOLD}%",
+            AlertSeverity.warning,
+        )
+        _manage_alert(
+            "high_correction_rate",
+            correction_rate > CORRECTION_RATE_MAX_THRESHOLD,
+            f"Correction rate is {correction_rate}%, above {CORRECTION_RATE_MAX_THRESHOLD}%",
+            AlertSeverity.warning,
+        )
+        _manage_alert(
+            "high_overspending_rate",
+            overspending_rate > OVERSPENDING_RATE_MAX_THRESHOLD,
+            f"Overspending rate is {overspending_rate}%, above {OVERSPENDING_RATE_MAX_THRESHOLD}%",
+            AlertSeverity.critical,
+        )
+        self.db.commit()
 
     def list_page(
         self,

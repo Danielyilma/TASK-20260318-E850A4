@@ -343,7 +343,7 @@ def list_reports(
     report_format: str | None = Query(default=None, alias="format"),
 ):
     return Phase5ReportsService(db).list_reports(
-        page=page, per_page=per_page, report_type=report_type, file_format=report_format
+        user=user, page=page, per_page=per_page, report_type=report_type, file_format=report_format
     )
 
 

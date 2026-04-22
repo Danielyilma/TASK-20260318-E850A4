@@ -4,7 +4,7 @@ from collections.abc import Generator
 # Ensure deterministic auth settings before importing the application package graph.
 os.environ.setdefault("JWT_SECRET_KEY", "test-secret")
 os.environ.setdefault("SYSTEM_ADMIN_USERNAME", "admin")
-os.environ.setdefault("SYSTEM_ADMIN_PASSWORD", "AdminP@ss1")
+os.environ.setdefault("SYSTEM_ADMIN_PASSWORD", "SecureP@ss1")
 os.environ.setdefault("UPLOAD_ROOT", "/tmp/arfamp-test-uploads")
 os.environ.setdefault("BACKUP_ROOT", "/tmp/arfamp-test-backups")
 
@@ -24,15 +24,15 @@ importlib.import_module("app.models")  # register ORM tables on Base.metadata fo
 
 
 @pytest.fixture(autouse=True)
-def _reset_runtime_state() -> Generator[None, None, None]:
+def _reset_runtime_state(db_session: Session) -> Generator[None, None, None]:
     from app.core.config import get_settings
     from app.core.token_blocklist import clear_blocklist
 
     get_settings.cache_clear()
-    clear_blocklist()
+    clear_blocklist(db_session)
     yield
     get_settings.cache_clear()
-    clear_blocklist()
+    clear_blocklist(db_session)
 
 
 @pytest.fixture(scope="function")

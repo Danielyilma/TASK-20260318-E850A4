@@ -1,3 +1,4 @@
+import logging
 import threading
 import time
 from datetime import datetime, timedelta, timezone
@@ -47,9 +48,8 @@ def _run_backup_scheduler() -> None:
             svc = BackupService(db)
             svc.create_daily_auto()
             svc.prune_old_backups(retention_days=settings.backup_retention_days)
-        except Exception:
-            # Keep scheduler alive even when one backup attempt fails.
-            pass
+        except Exception as exc:
+            logging.getLogger(__name__).exception("Backup scheduler failed: %s", exc)
         finally:
             db.close()
 
@@ -104,7 +104,8 @@ async def validation_exception_handler(_: Request, exc: RequestValidationError) 
 
 
 @app.exception_handler(Exception)
-async def unhandled_exception_handler(_: Request, __: Exception) -> JSONResponse:
+async def unhandled_exception_handler(_: Request, exc: Exception) -> JSONResponse:
+    logging.getLogger(__name__).exception("Unhandled exception: %s", exc)
     body = ErrorResponse(
         error=ErrorBody(code="INTERNAL_ERROR", message="An unexpected error occurred"),
     )

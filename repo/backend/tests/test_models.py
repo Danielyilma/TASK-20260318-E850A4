@@ -27,6 +27,7 @@ def test_activity_requires_name(db_session: Session) -> None:
     db_session.add(activity)
     with pytest.raises(IntegrityError):
         db_session.flush()
+    db_session.rollback()
 
 
 def test_user_requires_username(db_session: Session) -> None:
@@ -49,3 +50,4 @@ def test_user_requires_username(db_session: Session) -> None:
     db_session.add(user)
     with pytest.raises(IntegrityError):
         db_session.flush()
+    db_session.rollback()

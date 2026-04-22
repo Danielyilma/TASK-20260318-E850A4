@@ -14,7 +14,7 @@ def can_view_registration(user: User, reg: Registration) -> bool:
     if user.role == UserRole.applicant and reg.applicant_id == user.id:
         return True
     if user.role == UserRole.reviewer:
-        return True
+        return reg.status != RegistrationStatus.draft
     if user.role == UserRole.financial_admin and reg.status == RegistrationStatus.approved:
         return True
     return False
@@ -36,7 +36,9 @@ def registration_filters_for_user(user: User) -> list:
         return [Registration.applicant_id == user.id]
     if user.role == UserRole.financial_admin:
         return [Registration.status == RegistrationStatus.approved]
-    if user.role in (UserRole.reviewer, UserRole.system_admin):
+    if user.role == UserRole.reviewer:
+        return [Registration.status != RegistrationStatus.draft]
+    if user.role == UserRole.system_admin:
         return []
     raise forbidden("FORBIDDEN", "Insufficient permissions")
 

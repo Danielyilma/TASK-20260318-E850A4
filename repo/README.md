@@ -3,8 +3,9 @@
 This repository implements the platform in phased milestones.
 
 - **Phase 1** delivers a runnable FastAPI + Vue + PostgreSQL scaffold with Docker Compose, Alembic migrations, automated DB checks on startup, and automated tests.
-- **Phase 2** adds the core `users`, `activities`, and minimal `registrations` schema (for activity delete rules), JWT auth (`POST /api/v1/auth/login`, `POST /logout`, `GET /me`), full Activities CRUD per `docs/api-spec.md`, a seeded system administrator account, and a Vue UI to authenticate and browse/create activities against the live API.
-
+- **Phase 2** adds the core `users`, `activities`, and minimal `registrations` schema, JWT auth, and full Activities CRUD.
+- **Phase 3 & 4** build the Applicant portal (registration draft, checklist material uploads, versioning, budget validation) and Financial modules (transactions, invoices, balances).
+- **Phase 5 & 6** add audit trails, reporting, system metrics, and harden the system with scheduled backups, rate limits, UI refinements, and strict access controls.
 ## Prerequisites
 
 - Docker and Docker Compose
@@ -36,7 +37,7 @@ Wait until all services are healthy, then verify:
 
 - API health: `curl -s http://localhost:8000/api/v1/health` → `{"status":"ok"}`
 - UI: open `http://localhost:5173` — the home page loads **live** health from the backend (no mocked API in the app).
-- Activities UI: open `http://localhost:5173/activities` and sign in with the seeded administrator (`admin` / `AdminP@ss1` by default unless you changed compose env vars).
+- Activities UI: open `http://localhost:5173/activities` and sign in with the seeded administrator (using credentials from your `.env` file).
 
 The backend entrypoint waits for PostgreSQL, runs `alembic upgrade head`, runs `python -m app.scripts.seed_admin`, then starts Uvicorn on port **8000**. The frontend runs the Vite dev server on port **5173**.
 
@@ -97,11 +98,11 @@ npm install
 npm run test:unit
 ```
 
-## Project layout (Phase 2)
+## Project layout
 
-- `backend/app` — FastAPI modular monolith (`api`, `core`, `models`, `schemas`, `services`, `repositories`, `scripts`)
-- `backend/alembic` — migrations (`users`, `activities`, `registrations`)
-- `frontend/src` — Vue app with Router + Pinia, centralized Axios client, `services/*.service.js`, and activity views
+- `backend/app` — FastAPI modular monolith (`api`, `core`, `models`, `schemas`, `services`, `repositories`, `scripts`, `middleware`)
+- `backend/alembic` — full suite of schema migrations
+- `frontend/src` — Vue app with Router + Pinia, centralized Axios client, and unified UI views for Applicants, Reviewers, and Admins.
 
 ## API contract notes
 

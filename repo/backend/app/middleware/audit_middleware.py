@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import logging
+
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
 from starlette.responses import Response
@@ -19,7 +21,8 @@ class AuditMiddleware(BaseHTTPMiddleware):
             method = request.method.upper()
             path = request.url.path
             if method not in ("POST", "PUT", "PATCH", "DELETE"):
-                return response
+                if "verify-sensitive" not in path:
+                    return response
             if not path.startswith("/api/v1"):
                 return response
             if path.startswith("/api/v1/health") or path.startswith("/api/v1/auth/login"):
@@ -35,11 +38,12 @@ class AuditMiddleware(BaseHTTPMiddleware):
                     authorization=auth,
                     ip_address=ip,
                 )
-            except Exception:
+            except Exception as exc:
+                logging.getLogger(__name__).exception("Failed to write audit log: %s", exc)
                 db.rollback()
             finally:
                 db.close()
-        except Exception:
+        except Exception as exc:
             # Never break the response path for audit failures
-            pass
+            logging.getLogger(__name__).exception("Unhandled exception in AuditMiddleware: %s", exc)
         return response
