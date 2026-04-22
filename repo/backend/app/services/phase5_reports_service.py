@@ -8,6 +8,7 @@ from datetime import datetime
 from pathlib import Path
 
 from fastapi import HTTPException, status
+from reportlab.lib.pagesizes import letter
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
@@ -319,10 +320,13 @@ class Phase5ReportsService:
         ]
         return {"items": items, "total": total, "page": page, "per_page": per_page, "pages": pages}
 
-    def download_path(self, report_id: uuid.UUID) -> Path:
+    def download_path(self, report_id: uuid.UUID, user: User) -> Path:
         r = self.db.get(GeneratedReport, report_id)
         if r is None:
             raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Report not found")
+        user_role = getattr(user.role, "value", user.role)
+        if user_role == "financial_admin" and r.created_by != user.id:
+            raise HTTPException(status.HTTP_403_FORBIDDEN, detail="Insufficient permissions")
         p = Path(r.file_path)
         if not p.is_file():
             raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Report not found")

@@ -62,9 +62,7 @@ class Phase4MaterialService:
         now = utcnow()
         update_registration_lock(reg, activity, now)
 
-        if reg.status == RegistrationStatus.needs_correction:
-            if reg.supplementary_used:
-                raise bad_request("SUPPLEMENTARY_EXHAUSTED", "Supplementary submission has already been used")
+        if reg.status in (RegistrationStatus.needs_correction, RegistrationStatus.supplemented):
             if reg.supplementary_deadline is None or now > (as_utc(reg.supplementary_deadline) or reg.supplementary_deadline):
                 raise bad_request("SUPPLEMENTARY_EXPIRED", "The 72-hour supplementary window has expired")
         elif reg.is_locked or now > as_utc(activity.deadline):
@@ -135,8 +133,9 @@ class Phase4MaterialService:
         )
         self.db.add(mv)
 
-        if reg.status == RegistrationStatus.needs_correction and not reg.supplementary_used:
+        if reg.status in (RegistrationStatus.needs_correction, RegistrationStatus.supplemented):
             reg.status = RegistrationStatus.supplemented
+            # Supplementary flow is consumed once entered, but uploads remain allowed until deadline.
             reg.supplementary_used = True
         reg.updated_at = now
         self.db.commit()

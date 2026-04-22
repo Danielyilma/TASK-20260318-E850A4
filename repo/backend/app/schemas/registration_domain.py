@@ -17,6 +17,19 @@ class RegistrationFormData(BaseModel):
     start_date: str = Field(min_length=1, max_length=32)
     end_date: str = Field(min_length=1, max_length=32)
 
+    @field_validator("end_date")
+    @classmethod
+    def validate_date_order(cls, end_date: str, info):
+        start_date = info.data.get("start_date")
+        try:
+            start_dt = datetime.fromisoformat(str(start_date))
+            end_dt = datetime.fromisoformat(str(end_date))
+        except ValueError as exc:
+            raise ValueError("start_date and end_date must be ISO-8601 date strings") from exc
+        if end_dt < start_dt:
+            raise ValueError("end_date must be greater than or equal to start_date")
+        return end_date
+
 
 class RegistrationCreate(BaseModel):
     activity_id: UUID

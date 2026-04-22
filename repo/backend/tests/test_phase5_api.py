@@ -152,3 +152,59 @@ async def test_metrics_forbidden_for_applicant(
     token = login.json()["access_token"]
     r = await client.get("/api/v1/metrics/quality", headers={"Authorization": f"Bearer {token}"})
     assert r.status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_report_download_financial_owner_only(client: AsyncClient, admin_headers: dict[str, str], db_session: Session) -> None:
+    now = utcnow()
+    ph1, sl1 = hash_password_with_salt("SecureP@ss1")
+    ph2, sl2 = hash_password_with_salt("SecureP@ss1")
+    u1 = User(
+        id=uuid.uuid4(),
+        username=f"p5_fin_owner_{uuid.uuid4().hex[:6]}",
+        password_hash=ph1,
+        salt=sl1,
+        role=UserRole.financial_admin,
+        id_number=None,
+        contact_info=None,
+        is_locked=False,
+        locked_until=None,
+        failed_login_attempts=0,
+        first_failed_at=None,
+        is_active=True,
+        created_at=now,
+        updated_at=now,
+    )
+    u2 = User(
+        id=uuid.uuid4(),
+        username=f"p5_fin_other_{uuid.uuid4().hex[:6]}",
+        password_hash=ph2,
+        salt=sl2,
+        role=UserRole.financial_admin,
+        id_number=None,
+        contact_info=None,
+        is_locked=False,
+        locked_until=None,
+        failed_login_attempts=0,
+        first_failed_at=None,
+        is_active=True,
+        created_at=now,
+        updated_at=now,
+    )
+    db_session.add_all([u1, u2])
+    db_session.commit()
+    l1 = await client.post("/api/v1/auth/login", json={"username": u1.username, "password": "SecureP@ss1"})
+    l2 = await client.post("/api/v1/auth/login", json={"username": u2.username, "password": "SecureP@ss1"})
+    h1 = {"Authorization": f"Bearer {l1.json()['access_token']}"}
+    h2 = {"Authorization": f"Bearer {l2.json()['access_token']}"}
+
+    created = await client.post("/api/v1/reports/reconciliation", headers=h1, json={"format": "pdf"})
+    assert created.status_code == 201, created.text
+    rid = created.json()["report_id"]
+
+    owner_dl = await client.get(f"/api/v1/reports/{rid}/download", headers=h1)
+    assert owner_dl.status_code == 200
+    other_dl = await client.get(f"/api/v1/reports/{rid}/download", headers=h2)
+    assert other_dl.status_code == 403
+    admin_dl = await client.get(f"/api/v1/reports/{rid}/download", headers=admin_headers)
+    assert admin_dl.status_code == 200

@@ -7,7 +7,7 @@ from fastapi import HTTPException, status
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from app.core.http_errors import bad_request
+from app.core.http_errors import bad_request, forbidden
 from app.core.time import as_utc, utcnow
 from app.models.activity import Activity
 from app.models.enums import MaterialVersionLabel, RegistrationStatus
@@ -40,10 +40,9 @@ def update_registration_lock(reg: Registration, activity: Activity, now) -> None
         reg.is_locked = False
         return
     if (
-        reg.status == RegistrationStatus.needs_correction
+        reg.status in (RegistrationStatus.needs_correction, RegistrationStatus.supplemented)
         and reg.supplementary_deadline
         and now <= (as_utc(reg.supplementary_deadline) or reg.supplementary_deadline)
-        and not reg.supplementary_used
     ):
         reg.is_locked = False
         return
@@ -56,12 +55,16 @@ class Phase4RegistrationService:
         self.activities = ActivityRepository(db)
 
     def create(self, applicant: User, payload: RegistrationCreate) -> RegistrationRead:
+        if getattr(applicant.role, "value", applicant.role) != "applicant":
+            raise forbidden("FORBIDDEN", "Only applicants can create registrations")
         activity = self.activities.get_by_id(payload.activity_id)
         if activity is None or not activity.is_active:
             raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Activity not found")
         now = utcnow()
         if now > as_utc(activity.deadline):
             raise bad_request("DEADLINE_PASSED", "Activity deadline has passed")
+        if payload.requested_funding > activity.budget:
+            raise bad_request("VALIDATION_ERROR", "requested_funding cannot exceed activity budget")
 
         reg = Registration(
             id=uuid.uuid4(),

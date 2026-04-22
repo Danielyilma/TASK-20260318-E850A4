@@ -100,7 +100,22 @@ class Phase5FundingStatisticsService:
 
         by_time: list[dict] = []
         if group_by in ("month", "quarter"):
-            period_expr = func.strftime("%Y-%m", TransactionRecord.created_at)
+            dialect = self.db.get_bind().dialect.name
+            if dialect == "postgresql":
+                if group_by == "month":
+                    period_expr = func.to_char(func.date_trunc("month", TransactionRecord.created_at), "YYYY-MM")
+                else:
+                    period_expr = func.concat(
+                        func.extract("year", TransactionRecord.created_at),
+                        "-Q",
+                        func.extract("quarter", TransactionRecord.created_at),
+                    )
+            else:
+                # SQLite fallback for tests/local static runs.
+                if group_by == "month":
+                    period_expr = func.strftime("%Y-%m", TransactionRecord.created_at)
+                else:
+                    period_expr = func.strftime("%Y", TransactionRecord.created_at)
             q2 = (
                 select(
                     period_expr.label("period"),

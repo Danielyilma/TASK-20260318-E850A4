@@ -349,7 +349,7 @@ def download_report(
     user: Annotated[User, Depends(require_financial_or_system_admin)],
     db: Session = Depends(get_db),
 ):
-    path = Phase5ReportsService(db).download_path(report_id)
+    path = Phase5ReportsService(db).download_path(report_id, user)
     return FileResponse(path, filename=path.name, media_type="application/octet-stream")
 
 

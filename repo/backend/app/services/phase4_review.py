@@ -74,6 +74,8 @@ class Phase4ReviewService:
         ensure_registration_access(reviewer, reg)
         if payload.action == ReviewAction.request_correction and not (payload.correction_reason or "").strip():
             raise bad_request("VALIDATION_ERROR", "correction_reason is required for request_correction action")
+        if payload.action == ReviewAction.request_correction and reg.supplementary_used:
+            raise bad_request("SUPPLEMENTARY_EXHAUSTED", "One-time supplementary submission has already been used")
 
         new_status = _transition(reg.status, payload.action)
         if new_status is None:
@@ -89,7 +91,6 @@ class Phase4ReviewService:
         if payload.action == ReviewAction.request_correction:
             reg.supplementary_requested_at = now
             reg.supplementary_deadline = now + timedelta(hours=72)
-            reg.supplementary_used = False
         reg.status = new_status
         reg.updated_at = now
 
@@ -140,6 +141,8 @@ class Phase4ReviewService:
                     ensure_registration_access(reviewer, reg)
                     if payload.action == ReviewAction.request_correction and not (payload.correction_reason or "").strip():
                         raise ValueError("correction_reason is required for request_correction action")
+                    if payload.action == ReviewAction.request_correction and reg.supplementary_used:
+                        raise ValueError("One-time supplementary submission has already been used")
                     new_status = _transition(reg.status, payload.action)
                     if new_status is None:
                         action_s = getattr(payload.action, "value", payload.action)
@@ -152,7 +155,6 @@ class Phase4ReviewService:
                     if payload.action == ReviewAction.request_correction:
                         reg.supplementary_requested_at = now
                         reg.supplementary_deadline = now + timedelta(hours=72)
-                        reg.supplementary_used = False
                     reg.status = new_status
                     reg.updated_at = now
                     rec = ReviewRecord(

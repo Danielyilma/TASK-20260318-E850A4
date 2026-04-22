@@ -47,3 +47,13 @@ export async function uploadInvoice(accountId, transactionId, file) {
   )
   return data
 }
+
+export async function getFundingStatistics(params = {}) {
+  const { data } = await apiClient.get('/statistics/funding', { params })
+  return data
+}
+
+export async function getFundingAccountStatistics(accountId) {
+  const { data } = await apiClient.get(`/statistics/funding/${accountId}`)
+  return data
+}

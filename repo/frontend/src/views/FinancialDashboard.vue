@@ -24,6 +24,8 @@ const overspendDetail = ref(null)
 const pendingTxPayload = ref(null)
 
 const invoiceFile = ref(null)
+const overallStats = ref(null)
+const accountStats = ref(null)
 
 const maxInvoiceBytes = MAX_MATERIAL_FILE_BYTES
 
@@ -32,6 +34,7 @@ async function loadAccounts() {
   error.value = ''
   try {
     const data = await fundingApi.listFundingAccounts({ page: 1, per_page: 100 })
+    overallStats.value = await fundingApi.getFundingStatistics({ group_by: 'category' })
     accounts.value = data.items ?? []
     total.value = data.total ?? 0
     if (!selectedAccountId.value && accounts.value.length) {
@@ -52,6 +55,7 @@ async function selectAccount(id) {
     accountDetail.value = await fundingApi.getFundingAccount(id)
     const tx = await fundingApi.listTransactions(id, { page: 1, per_page: 100 })
     transactions.value = tx.items ?? []
+    accountStats.value = await fundingApi.getFundingAccountStatistics(id)
   } catch (e) {
     error.value = e?.response?.data?.error?.message ?? e.message ?? 'Failed to load account'
   } finally {
@@ -197,6 +201,24 @@ onMounted(loadAccounts)
           <p class="mono">{{ accountDetail.id }}</p>
           <p>{{ balanceLabel }}</p>
           <p v-if="accountDetail.is_overspent" class="warn">Overspent vs approved budget</p>
+        </div>
+
+        <div v-if="overallStats" class="card">
+          <h2>Statistics</h2>
+          <p class="muted">
+            Total accounts {{ overallStats.summary?.total_accounts ?? 0 }},
+            overspending rate {{ overallStats.summary?.overspending_rate ?? 0 }}%
+          </p>
+          <ul class="list">
+            <li v-for="row in overallStats.by_category ?? []" :key="row.category" class="small">
+              {{ row.category }}: expenses {{ row.total_expenses }} ({{ row.transaction_count }} tx)
+            </li>
+          </ul>
+          <ul v-if="accountStats?.by_category?.length" class="list">
+            <li v-for="row in accountStats.by_category" :key="`acct-${row.category}`" class="small">
+              This account / {{ row.category }}: {{ row.total_expenses }}
+            </li>
+          </ul>
         </div>
 
         <div v-if="accountDetail" class="card">

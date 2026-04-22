@@ -6,8 +6,26 @@ from datetime import datetime, timedelta, timezone
 
 import bcrypt
 import jwt
+from cryptography.fernet import Fernet, InvalidToken
 
 from app.core.config import Settings, get_settings
+
+
+def decrypt_config_secret(value: str, key: str | None) -> str:
+    """
+    Decrypt values formatted as ENC(<fernet-token>) or return plain value.
+    """
+    if not isinstance(value, str):
+        return value
+    if not value.startswith("ENC(") or not value.endswith(")"):
+        return value
+    if not key:
+        raise ValueError("CONFIG_ENCRYPTION_KEY is required to decrypt ENC(...) settings")
+    token = value[4:-1].encode("utf-8")
+    try:
+        return Fernet(key.encode("utf-8")).decrypt(token).decode("utf-8")
+    except (InvalidToken, ValueError) as exc:
+        raise ValueError("Failed to decrypt encrypted configuration value") from exc
 
 
 def generate_salt() -> str:

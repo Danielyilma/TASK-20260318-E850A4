@@ -377,3 +377,125 @@ async def test_funding_transaction_rollback_on_invalid_state(client, finance_hea
         json={"type": "expense", "amount": "1.00", "category": "X", "description": "y"},
     )
     assert resp.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_supplementary_allows_multiple_uploads_but_blocks_second_cycle(
+    client, applicant_a_headers, reviewer_headers, admin_headers
+):
+    headers_a, _ = applicant_a_headers
+    deadline = (utcnow() + timedelta(days=30)).isoformat().replace("+00:00", "Z")
+    act = await client.post(
+        "/api/v1/activities",
+        headers=admin_headers,
+        json={"name": "P6 supplementary", "description": None, "deadline": deadline, "budget": "10000.00"},
+    )
+    assert act.status_code == 201, act.text
+    aid = act.json()["id"]
+    reg = await client.post(
+        "/api/v1/registrations",
+        headers=headers_a,
+        json={"activity_id": aid, "form_data": _form(), "requested_funding": "1000.00"},
+    )
+    assert reg.status_code == 201, reg.text
+    rid = reg.json()["id"]
+    chk = await client.post(
+        f"/api/v1/registrations/{rid}/checklist",
+        headers=admin_headers,
+        json={"item_name": "Doc", "is_required": True, "allowed_types": ["pdf"], "max_file_size_mb": 20},
+    )
+    item_id = chk.json()["id"]
+    up1 = await client.post(
+        f"/api/v1/registrations/{rid}/materials/{item_id}/upload",
+        headers=headers_a,
+        files={"file": ("a.pdf", io.BytesIO(b"%PDF-initial"), "application/pdf")},
+    )
+    assert up1.status_code == 201
+    await client.patch(
+        f"/api/v1/registrations/{rid}/materials/{item_id}/versions/{up1.json()['id']}/label",
+        headers=headers_a,
+        json={"label": "submitted"},
+    )
+    await client.patch(f"/api/v1/registrations/{rid}/submit", headers=headers_a)
+    corr = await client.patch(
+        f"/api/v1/registrations/{rid}/review",
+        headers=reviewer_headers,
+        json={"action": "request_correction", "comment": "fix", "correction_reason": "Need clearer document"},
+    )
+    assert corr.status_code == 200
+
+    up2 = await client.post(
+        f"/api/v1/registrations/{rid}/materials/{item_id}/upload",
+        headers=headers_a,
+        files={"file": ("b.pdf", io.BytesIO(b"%PDF-second"), "application/pdf")},
+    )
+    assert up2.status_code == 201
+    up3 = await client.post(
+        f"/api/v1/registrations/{rid}/materials/{item_id}/upload",
+        headers=headers_a,
+        files={"file": ("c.pdf", io.BytesIO(b"%PDF-third"), "application/pdf")},
+    )
+    assert up3.status_code == 201
+
+    req_again = await client.patch(
+        f"/api/v1/registrations/{rid}/review",
+        headers=reviewer_headers,
+        json={"action": "request_correction", "comment": "again", "correction_reason": "Again"},
+    )
+    assert req_again.status_code == 400
+    assert req_again.json()["error"]["code"] == "SUPPLEMENTARY_EXHAUSTED"
+
+
+@pytest.mark.asyncio
+async def test_registration_create_restricted_to_applicant(client, finance_headers, admin_headers):
+    act = await client.post(
+        "/api/v1/activities",
+        headers=admin_headers,
+        json={
+            "name": "P6 applicant-only",
+            "description": None,
+            "deadline": (utcnow() + timedelta(days=10)).isoformat().replace("+00:00", "Z"),
+            "budget": "10000.00",
+        },
+    )
+    assert act.status_code == 201
+    resp = await client.post(
+        "/api/v1/registrations",
+        headers=finance_headers,
+        json={"activity_id": act.json()["id"], "form_data": _form(), "requested_funding": "100.00"},
+    )
+    assert resp.status_code == 403
+    assert resp.json()["error"]["code"] == "FORBIDDEN"
+
+
+@pytest.mark.asyncio
+async def test_registration_rule_validation_enforced(client, applicant_a_headers, admin_headers):
+    headers_a, _ = applicant_a_headers
+    act = await client.post(
+        "/api/v1/activities",
+        headers=admin_headers,
+        json={
+            "name": "P6 validation",
+            "description": None,
+            "deadline": (utcnow() + timedelta(days=10)).isoformat().replace("+00:00", "Z"),
+            "budget": "1000.00",
+        },
+    )
+    assert act.status_code == 201
+    bad_dates = await client.post(
+        "/api/v1/registrations",
+        headers=headers_a,
+        json={
+            "activity_id": act.json()["id"],
+            "form_data": {**_form(), "start_date": "2026-12-31", "end_date": "2026-01-01"},
+            "requested_funding": "100.00",
+        },
+    )
+    assert bad_dates.status_code in (400, 422)
+    over_budget = await client.post(
+        "/api/v1/registrations",
+        headers=headers_a,
+        json={"activity_id": act.json()["id"], "form_data": _form(), "requested_funding": "5000.00"},
+    )
+    assert over_budget.status_code == 400
+    assert over_budget.json()["error"]["code"] == "VALIDATION_ERROR"
