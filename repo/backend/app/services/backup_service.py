@@ -133,7 +133,7 @@ class BackupService:
     def _settings(self) -> Settings:
         return get_settings()
 
-    def create_manual(self) -> BackupCreateResponse:
+    def _create_backup(self, *, backup_type: str) -> BackupCreateResponse:
         settings = self._settings()
         bind_url = str(self.db.get_bind().url)
         database_url = bind_url
@@ -145,7 +145,7 @@ class BackupService:
         now = utcnow()
         record = BackupRecord(
             id=bid,
-            backup_type="manual",
+            backup_type=backup_type,
             backup_path="",
             size_bytes=0,
             status="failed",
@@ -160,7 +160,7 @@ class BackupService:
 
         staging = Path(tempfile.mkdtemp(prefix="backup_stage_"))
         sql_path = staging / "database.sql"
-        artifact = backup_root / f"{bid}_manual_{now.strftime('%Y%m%d_%H%M%S')}.tar.gz"
+        artifact = backup_root / f"{bid}_{backup_type}_{now.strftime('%Y%m%d_%H%M%S')}.tar.gz"
         try:
             if _is_postgres(database_url):
                 _run_pg_dump(_pg_tool_dsn(database_url), sql_path)
@@ -196,6 +196,27 @@ class BackupService:
             raise bad_request("VALIDATION_ERROR", f"Backup failed: {exc}") from exc
         finally:
             shutil.rmtree(staging, ignore_errors=True)
+
+    def create_manual(self) -> BackupCreateResponse:
+        return self._create_backup(backup_type="manual")
+
+    def create_daily_auto(self) -> BackupCreateResponse:
+        return self._create_backup(backup_type="daily_auto")
+
+    def prune_old_backups(self, *, retention_days: int | None) -> None:
+        if retention_days is None or retention_days <= 0:
+            return
+        cutoff = utcnow().timestamp() - (retention_days * 24 * 60 * 60)
+        rows = self.db.scalars(select(BackupRecord)).all()
+        for row in rows:
+            created_ts = row.created_at.timestamp() if row.created_at else None
+            if created_ts is None or created_ts >= cutoff:
+                continue
+            path = Path(row.backup_path) if row.backup_path else None
+            if path and path.exists():
+                path.unlink(missing_ok=True)
+            self.db.delete(row)
+        self.db.commit()
 
     def list_page(
         self,

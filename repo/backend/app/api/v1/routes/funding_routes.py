@@ -9,6 +9,7 @@ from fastapi.responses import FileResponse, JSONResponse
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_user, get_db, require_financial_admin, require_financial_or_system_admin
+from app.core.http_errors import bad_request
 from app.models.enums import TransactionType
 from app.models.user import User
 from app.schemas.registration_domain import TransactionCreate, TransactionUpdate
@@ -20,7 +21,10 @@ router = APIRouter(tags=["funding"])
 def _parse_iso_dt(value: str | None) -> datetime | None:
     if value is None or value == "":
         return None
-    return datetime.fromisoformat(value.replace("Z", "+00:00"))
+    try:
+        return datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError as exc:
+        raise bad_request("VALIDATION_ERROR", "Invalid ISO datetime for date filter") from exc
 
 
 def _svc(db: Session = Depends(get_db)) -> Phase4FundingService:

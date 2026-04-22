@@ -1,6 +1,6 @@
 from functools import lru_cache
 
-from pydantic import model_validator
+from pydantic import Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -21,6 +21,9 @@ class Settings(BaseSettings):
 
     upload_root: str = "data/uploads"
     backup_root: str = "data/backups"
+    backup_daily_enabled: bool = True
+    backup_daily_hour_utc: int = Field(default=2, ge=0, le=23)
+    backup_retention_days: int | None = Field(default=None, ge=1)
 
     @model_validator(mode="after")
     def decrypt_sensitive_settings(self):

@@ -155,6 +155,8 @@ class Phase4RegistrationService:
         if payload.form_data is not None:
             reg.form_data = payload.form_data
         if payload.requested_funding is not None:
+            if payload.requested_funding > activity.budget:
+                raise bad_request("VALIDATION_ERROR", "requested_funding cannot exceed activity budget")
             reg.requested_funding = payload.requested_funding
         reg.updated_at = now
         update_registration_lock(reg, activity, now)

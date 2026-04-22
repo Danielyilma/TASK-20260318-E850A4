@@ -48,6 +48,15 @@ describe('FinancialDashboard.vue', () => {
       per_page: 100,
       pages: 0,
     })
+    vi.spyOn(fundingApi, 'getFundingStatistics').mockResolvedValue({
+      summary: { total_accounts: 1, overspending_rate: 0 },
+      by_category: [],
+      by_time: [],
+    })
+    vi.spyOn(fundingApi, 'getFundingAccountStatistics').mockResolvedValue({
+      account_id: '110e8400-e29b-41d4-a716-446655440090',
+      by_category: [],
+    })
 
     const wrapper = mount(FinancialDashboard)
     await flushPromises()

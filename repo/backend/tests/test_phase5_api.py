@@ -208,3 +208,10 @@ async def test_report_download_financial_owner_only(client: AsyncClient, admin_h
     assert other_dl.status_code == 403
     admin_dl = await client.get(f"/api/v1/reports/{rid}/download", headers=admin_headers)
     assert admin_dl.status_code == 200
+
+
+@pytest.mark.asyncio
+async def test_invalid_iso_dates_return_400(client: AsyncClient, admin_headers: dict[str, str]) -> None:
+    bad_quality = await client.get("/api/v1/metrics/quality?start_date=nope", headers=admin_headers)
+    assert bad_quality.status_code == 400
+    assert bad_quality.json()["error"]["code"] == "VALIDATION_ERROR"

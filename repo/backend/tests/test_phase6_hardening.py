@@ -18,6 +18,7 @@ from app.models.enums import RegistrationStatus, UserRole
 from app.models.material_checklist import MaterialChecklist
 from app.models.registration import Registration
 from app.models.user import User
+from app.services.backup_service import BackupService
 
 
 def _form() -> dict:
@@ -499,3 +500,114 @@ async def test_registration_rule_validation_enforced(client, applicant_a_headers
     )
     assert over_budget.status_code == 400
     assert over_budget.json()["error"]["code"] == "VALIDATION_ERROR"
+
+
+@pytest.mark.asyncio
+async def test_registration_update_budget_cap_enforced(client, applicant_a_headers, admin_headers):
+    headers_a, _ = applicant_a_headers
+    act = await client.post(
+        "/api/v1/activities",
+        headers=admin_headers,
+        json={
+            "name": "P6 update budget cap",
+            "description": None,
+            "deadline": (utcnow() + timedelta(days=10)).isoformat().replace("+00:00", "Z"),
+            "budget": "500.00",
+        },
+    )
+    assert act.status_code == 201
+    reg = await client.post(
+        "/api/v1/registrations",
+        headers=headers_a,
+        json={"activity_id": act.json()["id"], "form_data": _form(), "requested_funding": "100.00"},
+    )
+    assert reg.status_code == 201
+    rid = reg.json()["id"]
+    resp = await client.put(
+        f"/api/v1/registrations/{rid}",
+        headers=headers_a,
+        json={"requested_funding": "9999.00"},
+    )
+    assert resp.status_code == 400
+    assert resp.json()["error"]["code"] == "VALIDATION_ERROR"
+
+
+@pytest.mark.asyncio
+async def test_material_label_patch_blocked_when_locked(client, applicant_a_headers, db_session, admin_headers):
+    headers_a, uid = applicant_a_headers
+    now = utcnow()
+    ar = await client.post(
+        "/api/v1/activities",
+        headers=admin_headers,
+        json={
+            "name": "P6 locked labels",
+            "description": None,
+            "deadline": "2030-12-31T12:00:00+00:00",
+            "budget": "10000.00",
+        },
+    )
+    assert ar.status_code == 201
+    aid = uuid.UUID(ar.json()["id"])
+    reg_deadline = datetime.fromisoformat(ar.json()["deadline"].replace("Z", "+00:00"))
+    reg = Registration(
+        id=uuid.uuid4(),
+        activity_id=aid,
+        applicant_id=uid,
+        form_data=_form(),
+        requested_funding=Decimal("1000"),
+        status=RegistrationStatus.draft,
+        deadline=reg_deadline,
+        is_locked=False,
+        supplementary_requested_at=None,
+        supplementary_deadline=None,
+        supplementary_used=False,
+        created_at=now,
+        updated_at=now,
+    )
+    db_session.add(reg)
+    item = MaterialChecklist(
+        id=uuid.uuid4(),
+        registration_id=reg.id,
+        item_name="Doc",
+        is_required=True,
+        allowed_types=["pdf"],
+        max_file_size_mb=20,
+        created_at=now,
+    )
+    db_session.add(item)
+    db_session.commit()
+    up = await client.post(
+        f"/api/v1/registrations/{reg.id}/materials/{item.id}/upload",
+        headers=headers_a,
+        files={"file": ("a.pdf", io.BytesIO(b"%PDF-a"), "application/pdf")},
+    )
+    assert up.status_code == 201
+    row = db_session.get(Registration, reg.id)
+    assert row is not None
+    row.status = RegistrationStatus.submitted
+    row.is_locked = True
+    db_session.commit()
+    blocked = await client.patch(
+        f"/api/v1/registrations/{reg.id}/materials/{item.id}/versions/{up.json()['id']}/label",
+        headers=headers_a,
+        json={"label": "submitted"},
+    )
+    assert blocked.status_code == 400
+    assert blocked.json()["error"]["code"] in ("DEADLINE_PASSED", "INVALID_STATE_TRANSITION")
+
+
+@pytest.mark.asyncio
+async def test_invalid_date_query_returns_validation_error(client, finance_headers, admin_headers):
+    r1 = await client.get("/api/v1/statistics/funding?start_date=not-a-date", headers=finance_headers)
+    assert r1.status_code == 400
+    assert r1.json()["error"]["code"] == "VALIDATION_ERROR"
+    r2 = await client.get("/api/v1/metrics/quality?start_date=bad", headers=admin_headers)
+    assert r2.status_code == 400
+    assert r2.json()["error"]["code"] == "VALIDATION_ERROR"
+
+
+def test_daily_auto_backup_record_created(db_session):
+    svc = BackupService(db_session)
+    resp = svc.create_daily_auto()
+    assert resp.backup_type == "daily_auto"
+    assert resp.status == "completed"

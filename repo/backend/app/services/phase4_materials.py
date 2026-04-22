@@ -199,6 +199,17 @@ class Phase4MaterialService:
         if mv is None or item is None or item.registration_id != reg.id or mv.checklist_item_id != item.id:
             raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Material version not found")
         now = utcnow()
+        activity = self.activities.get_by_id(reg.activity_id)
+        if activity is None:
+            raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Activity not found")
+        update_registration_lock(reg, activity, now)
+        if reg.status in (RegistrationStatus.needs_correction, RegistrationStatus.supplemented):
+            if reg.supplementary_deadline is None or now > (as_utc(reg.supplementary_deadline) or reg.supplementary_deadline):
+                raise bad_request("SUPPLEMENTARY_EXPIRED", "The 72-hour supplementary window has expired")
+        elif reg.is_locked or now > as_utc(activity.deadline):
+            raise bad_request("DEADLINE_PASSED", "Upload deadline has passed")
+        if reg.status not in (RegistrationStatus.draft, RegistrationStatus.needs_correction, RegistrationStatus.supplemented):
+            raise bad_request("INVALID_STATE_TRANSITION", "Material labels can only be changed in editable states")
         mv.label = label
         mv.updated_at = now
         reg.updated_at = now

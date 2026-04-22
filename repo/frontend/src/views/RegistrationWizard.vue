@@ -39,7 +39,7 @@ function defaultFormDates() {
 
 function tickSupplementary() {
   const dl = registration.value?.supplementary_deadline
-  if (!dl || registration.value?.supplementary_used) {
+  if (!dl) {
     supplementaryRemainingMs.value = null
     return
   }
@@ -82,7 +82,7 @@ const totalUploadedBytes = computed(() => {
 const canEditMaterials = computed(
   () =>
     Boolean(registration.value) &&
-    (registration.value.status === 'draft' || registration.value.status === 'needs_correction') &&
+    ['draft', 'needs_correction', 'supplemented'].includes(registration.value.status) &&
     !registration.value.is_locked,
 )
 
@@ -302,10 +302,7 @@ watch(registrationIdParam, async (id, prev) => {
         </button>
       </div>
 
-      <div
-        v-if="registration.supplementary_deadline && !registration.supplementary_used"
-        class="card countdown"
-      >
+      <div v-if="registration.supplementary_deadline" class="card countdown">
         <h3>Supplementary window</h3>
         <p v-if="supplementaryRemainingMs === 0" class="err">Window closed — uploads may be blocked by the server.</p>
         <p v-else class="mono">Time remaining: {{ formatDuration(supplementaryRemainingMs) }}</p>
@@ -338,7 +335,7 @@ watch(registrationIdParam, async (id, prev) => {
             <p class="muted small">Allowed: {{ (item.allowed_types ?? []).join(', ') }} · per file ≤ {{ item.max_file_size_mb }}MB</p>
             <p v-if="uploadErrors[item.id]" class="err small">{{ uploadErrors[item.id] }}</p>
             <input
-              v-if="registration.status === 'draft' || registration.status === 'needs_correction'"
+              v-if="['draft', 'needs_correction', 'supplemented'].includes(registration.status)"
               type="file"
               class="file"
               :disabled="!canEditMaterials"
@@ -353,7 +350,7 @@ watch(registrationIdParam, async (id, prev) => {
               <div class="row-actions">
                 <button type="button" class="btn tiny" @click="downloadVersion(v.id)">Download</button>
                 <select
-                  v-if="registration.status === 'draft' || registration.status === 'needs_correction'"
+                  v-if="['draft', 'needs_correction', 'supplemented'].includes(registration.status)"
                   class="sel"
                   :value="v.label"
                   :disabled="!canEditMaterials"

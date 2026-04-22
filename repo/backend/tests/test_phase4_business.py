@@ -509,3 +509,31 @@ async def test_put_transaction_overspend_requires_override(
     )
     assert ok.status_code == 200
     assert float(ok.json()["amount"]) == 12000.0
+
+
+@pytest.mark.asyncio
+async def test_registration_update_rejects_over_activity_budget(
+    client: AsyncClient,
+    admin_headers: dict[str, str],
+    applicant_headers: dict[str, str],
+) -> None:
+    deadline = (utcnow() + timedelta(days=60)).isoformat().replace("+00:00", "Z")
+    act = await client.post(
+        "/api/v1/activities",
+        headers=admin_headers,
+        json={"name": "Budget cap", "description": None, "deadline": deadline, "budget": 1000},
+    )
+    aid = act.json()["id"]
+    reg = await client.post(
+        "/api/v1/registrations",
+        headers=applicant_headers,
+        json={"activity_id": aid, "form_data": _form(), "requested_funding": 500},
+    )
+    rid = reg.json()["id"]
+    resp = await client.put(
+        f"/api/v1/registrations/{rid}",
+        headers=applicant_headers,
+        json={"requested_funding": 5000},
+    )
+    assert resp.status_code == 400
+    assert resp.json()["error"]["code"] == "VALIDATION_ERROR"
